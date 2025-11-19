@@ -1,0 +1,63 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-User Email Sender</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Multi-User Email Sender</h1>
+
+        <!-- Upload Email List -->
+        <form id="emailForm" action="/send_emails" method="post" enctype="multipart/form-data">
+            <label for="email_file">Upload your email list (Excel, TXT, etc.):</label>
+            <input type="file" id="email_file" name="email_file" accept=".xlsx,.csv,.txt,.pdf">
+
+            <!-- Add emails manually -->
+            <label for="manual_emails">Add emails manually (separate with commas):</label>
+            <textarea id="manual_emails" name="manual_emails" placeholder="Enter emails here..."></textarea>
+
+            <!-- Email content -->
+            <label for="subject">Email Subject:</label>
+            <input type="text" id="subject" name="subject">
+
+            <label for="message">Email Body:</label>
+            <textarea id="message" name="message" placeholder="Write your email message here..."></textarea>
+
+            <!-- Attachments -->
+            <label for="attachments">Attach files:</label>
+            <input type="file" id="attachments" name="attachments" multiple>
+
+            <!-- Review and Send -->
+            <button type="button" onclick="reviewMessage()">Review Message</button>
+            <button type="submit">Send Emails</button>
+        </form>
+
+        <!-- Review Section -->
+        <div id="reviewSection" style="display: none;">
+            <h2>Review Message</h2>
+            <p><strong>Subject:</strong> <span id="reviewSubject"></span></p>
+            <p><strong>Message:</strong></p>
+            <p id="reviewMessage"></p>
+            <p><strong>Attachments:</strong> <span id="reviewAttachments"></span></p>
+        </div>
+    </div>
+
+    <script>
+        function reviewMessage() {
+            const subject = document.getElementById('subject').value;
+            const message = document.getElementById('message').value;
+            const attachments = document.getElementById('attachments').files;
+            
+            document.getElementById('reviewSubject').innerText = subject;
+            document.getElementById('reviewMessage').innerText = message;
+            document.getElementById('reviewAttachments').innerText = [...attachments].map(file => file.name).join(', ');
+
+            document.getElementById('reviewSection').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

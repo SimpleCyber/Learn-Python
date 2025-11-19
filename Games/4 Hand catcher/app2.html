@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Hand Catcher Game</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #000;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 640px;
+            height: 480px;
+        }
+        
+        #handTrackingContainer {
+            width: 320px;
+            height: 240px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+        }
+        
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        
+        #videoElement {
+            position: absolute;
+            visibility: hidden;
+        }
+        
+        #handCanvas {
+            transform: scaleX(-1);
+        }
+        
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            font-size: 24px;
+            z-index: 2;
+        }
+        
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 18px;
+            cursor: pointer;
+            background: #4CAF50;
+            border: none;
+            color: white;
+            border-radius: 5px;
+        }
+        
+        button:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <video id="videoElement" width="640" height="480" autoplay></video>
+        <canvas id="gameCanvas" width="640" height="480"></canvas>
+        <div id="startScreen">
+            <p>Press Start to Begin</p>
+            <button id="startButton">Start Game</button>
+        </div>
+        <div id="gameOverScreen" style="display: none">
+            <p>Game Over</p>
+            <p id="finalScore">Score: 0</p>
+            <button id="restartButton">Play Again</button>
+        </div>
+    </div>
+    <div id="handTrackingContainer">
+        <canvas id="handCanvas" width="320" height="240"></canvas>
+    </div>
+
+    <script>
+        // Game constants
+        const WIDTH = 640;
+        const HEIGHT = 480;
+        const CATCHER_WIDTH = 100;
+        const CATCHER_HEIGHT = 20;
+        const CIRCLE_RADIUS = 20;
+        const FALL_SPEED = 5;
+        const MAX_LIVES = 10;
+        const BALL_GENERATION_INTERVAL = 30;
+
+        // Game elements
+        const gameCanvas = document.getElementById('gameCanvas');
+        const handCanvas = document.getElementById('handCanvas');
+        const ctx = gameCanvas.getContext('2d');
+        const handCtx = handCanvas.getContext('2d');
+        const videoElement = document.getElementById('videoElement');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const startButton = document.getElementById('startButton');
+        const restartButton = document.getElementById('restartButton');
+        const finalScore = document.getElementById('finalScore');
+
+        // Load assets
+        const backgroundImage = new Image();
+        backgroundImage.src = './Assets/background.jpg';
+
+        // Load sounds
+        const backgroundMusic = new Audio('./Assets/background_music.mp3');
+        const catchSound = new Audio('./Assets/catch.mp3');
+        const missSound = new Audio('./Assets/miss.mp3');
+        const gameOverSound = new Audio('./Assets/game_over.mp3');
+        backgroundMusic.loop = true;
+
+        // Game state
+        let gameActive = false;
+        let score = 0;
+        let lives = MAX_LIVES;
+        let circles = [];
+        let frameCounter = 0;
+        let catcherX = WIDTH / 2;
+        let catcherY = HEIGHT - CATCHER_HEIGHT;
+
+        // Hand tracking setup
+        const hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        // Setup camera
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function(stream) {
+                videoElement.srcObject = stream;
+            });
+
+        hands.onResults(onResults);
+
+        function onResults(results) {
+            // Clear hand tracking canvas
+            handCtx.save();
+            handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+            
+            // Draw video frame
+            handCtx.drawImage(results.image, 0, 0, handCanvas.width, handCanvas.height);
+
+            if (results.multiHandLandmarks) {
+                // Draw hand landmarks
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(handCtx, landmarks, HAND_CONNECTIONS, {
+                        color: '#00FF00',
+                        lineWidth: 2
+                    });
+                    drawLandmarks(handCtx, landmarks, {
+                        color: '#FF0000',
+                        lineWidth: 1,
+                        radius: 3
+                    });
+                }
+
+                // Update catcher position
+                const indexFinger = results.multiHandLandmarks[0][8];
+                catcherX = (1 - indexFinger.x) * WIDTH;
+            }
+
+            handCtx.restore();
+        }
+
+        // Setup MediaPipe camera
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: WIDTH,
+            height: HEIGHT
+        });
+
+        camera.start();
+
+        function drawGame() {
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            
+            // Draw background
+            ctx.drawImage(backgroundImage, 0, 0, WIDTH, HEIGHT);
+            
+            // Draw catcher
+            ctx.fillStyle = '#00FF00';
+            ctx.fillRect(catcherX - CATCHER_WIDTH/2, catcherY, CATCHER_WIDTH, CATCHER_HEIGHT);
+            
+            // Draw circles
+            ctx.fillStyle = '#FFFFFF';
+            circles.forEach(circle => {
+                ctx.beginPath();
+                ctx.arc(circle.x, circle.y, CIRCLE_RADIUS, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Draw score and lives
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = '24px Arial';
+            ctx.fillText(`Score: ${score} | Lives: ${lives}`, 10, 30);
+        }
+
+        function updateGame() {
+            if (!gameActive) return;
+
+            frameCounter++;
+            if (frameCounter >= BALL_GENERATION_INTERVAL) {
+                circles.push({
+                    x: Math.random() * (WIDTH - CIRCLE_RADIUS * 2) + CIRCLE_RADIUS,
+                    y: 0
+                });
+                frameCounter = 0;
+            }
+
+            circles.forEach((circle, index) => {
+                circle.y += FALL_SPEED + score * 0.1;
+
+                // Check for catch
+                if (circle.y + CIRCLE_RADIUS > catcherY && 
+                    circle.y - CIRCLE_RADIUS < catcherY + CATCHER_HEIGHT &&
+                    circle.x > catcherX - CATCHER_WIDTH/2 &&
+                    circle.x < catcherX + CATCHER_WIDTH/2) {
+                    circles.splice(index, 1);
+                    catchSound.play();
+                    score++;
+                }
+                // Check for miss
+                else if (circle.y > HEIGHT) {
+                    circles.splice(index, 1);
+                    missSound.play();
+                    lives--;
+                    if (lives <= 0) {
+                        endGame();
+                    }
+                }
+            });
+        }
+
+        function gameLoop() {
+            updateGame();
+            drawGame();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            gameActive = true;
+            score = 0;
+            lives = MAX_LIVES;
+            circles = [];
+            frameCounter = 0;
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            backgroundMusic.play();
+        }
+
+        function endGame() {
+            gameActive = false;
+            backgroundMusic.pause();
+            backgroundMusic.currentTime = 0;
+            gameOverSound.play();
+            finalScore.textContent = `Score: ${score}`;
+            gameOverScreen.style.display = 'flex';
+        }
+
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', startGame);
+
+        // Start game loop
+        gameLoop();
+    </script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+pytube==10.9.2
+streamlit==1.17.0
+Pillow==8.4.0
+requests==2.26.0
